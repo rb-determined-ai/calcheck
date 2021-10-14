@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
 import time
+import datetime
 import urllib.request
+import sys
 
 ### BEGIN CONFIG SECTION
 
@@ -226,10 +228,97 @@ def vevents(f):
             # break the while loop
             break
 
-def detect_upcoming_events(url, window, hook):
+def read_key(vevent, key):
+    for k, v in vevent:
+        if k.split(";")[0] == key:
+            return v
+    return None
+
+def key_params(vevent, key):
+    for k, v in vevent:
+        if k.split(";")[0] == key:
+            params = {}
+            for pair in k.split(";")[1:]:
+                kk, vv = pair.split("=", 1)
+                params[kk] = vv
+            return params
+    return None
+
+def dup_vevent(vevent, **replacements):
+    out = []
+    for k, v in vevent:
+        if k.split(";")[0] in replacements:
+            out.append(replacements[k.split(";")[0]])
+        else:
+            out.append((k, v))
+    return out
+
+def days_to_num(days):
+    dmap = {
+        "MO": 1,
+        "TU": 2,
+        "WE": 3,
+        "TH": 4,
+        "FR": 5,
+        "SA": 6,
+        "SU": 7,
+    }
+    return [dmap[d] for d in days]
+
+def recur(vevent, rrule):
+    params = {}
+    for pair in rrule.split(";"):
+        k, v = pair.split("=", 1)
+        params[k] = v
+    summary = read_key(vevent, "SUMMARY")
+    dtstart = read_key(vevent, "DTSTART")
+    dtstart_params = key_params(vevent, "DTSTART")
+    tzid = dtstart_params["TZID"]
+
+    # Weekly recurrance logic.
+    if params["FREQ"] == "WEEKLY":
+        assert "BYDAY" in params, "RRULE:FREQ=WEEKLY has no BYDAY: {rrule}"
+        assert "UNTIL" in params, "RRULE:FREQ=WEEKLY has no UNTIL: {rrule}"
+        days = days_to_num(params["BYDAY"].split(","))
+        until = datetime.datetime.strptime(params["UNTIL"], "%Y%m%dT%H%M%SZ")
+        interval = int(params.get("INTERVAL", "1"))
+        tm = datetime.datetime.strptime(dtstart, "%Y%m%dT%H%M%S")
+        end = datetime.datetime.now() + datetime.timedelta(days=14)
+        if until < end:
+            end = until
+        # repeatedly add days, and check if they land in the BYDAY spec
+        tm += datetime.timedelta(days=1)
+        while tm < end:
+            if tm.isoweekday() in days:
+                new_dtstart_val = tm.strftime("%Y%m%dT%H%M%S")
+                new_dtstart_key = "DTSTART;" + ";".join(f"{k}={v}" for k,v in dtstart_params.items())
+                yield dup_vevent(vevent, DTSTART=(new_dtstart_key, new_dtstart_val))
+            tm += datetime.timedelta(days=1)
+            # handle intervals: skip from sunday to sunday
+            if interval > 1 and tm.isoweekday() == 7:
+                for _ in range(1, interval):
+                    tm += datetime.timedelta(days=7)
+        return
+
+    if params["FREQ"] == "MONTHLY":
+        # TODO: support monthly events
+        return
+
+    raise ValueError(f"unsupported FREQ: '{params['FREQ']}'")
+
+
+def recurrance(vevents):
+    for vevent in vevents:
+        summary = read_key(vevent, "SUMMARY")
+        yield vevent
+        rrule = read_key(vevent, "RRULE")
+        if rrule:
+            yield from recur(vevent, rrule)
+
+
+def detect_upcoming_events(url, window, hook, now):
     with urllib.request.urlopen(url) as f:
-        now = time.time()
-        for vevent in vevents(to_utf8(f)):
+        for vevent in recurrance(vevents(to_utf8(f))):
             for obj in vevent:
                 assert len(obj) == 2
             dtstart = None
@@ -242,17 +331,22 @@ def detect_upcoming_events(url, window, hook):
                 if key == "SUMMARY":
                     summary = val
             epoch = epoch_with_tzid(dtstart, tzid)
-            timestr = time.strftime("%Y %b %d %H:%M:%S %Z", time.localtime(epoch))
 
             diff = epoch - now
+            print(diff, dtstart, summary)
             if diff < 0 or diff > window:
                 continue
+            print("HOOK!", epoch, summary)
             hook(epoch, summary)
 
 
 if __name__ == "__main__":
     try:
-        detect_upcoming_events(URL, WINDOW, on_event)
+        if len(sys.argv) > 1:
+            now = int(sys.argv[1])
+        else:
+            now = time.time()
+        detect_upcoming_events(URL, WINDOW, on_event, now)
     except Exception as e:
         on_failure(str(e))
         raise
