@@ -316,9 +316,20 @@ def recurrance(vevents):
             yield from recur(vevent, rrule)
 
 
+def ignore_all_day_events(vevents):
+    for vevent in vevents:
+        allday = read_key(vevent, "X-MICROSOFT-CDO-ALLDAYEVENT")
+        if allday and allday.lower() == "true":
+            continue
+        yield vevent
+
+
 def detect_upcoming_events(url, window, hook, now):
     with urllib.request.urlopen(url) as f:
-        for vevent in recurrance(vevents(to_utf8(f))):
+        vevs = vevents(to_utf8(f))
+        vevs = ignore_all_day_events(vevs)
+        vevs = recurrance(vevs)
+        for vevent in vevs:
             for obj in vevent:
                 assert len(obj) == 2
             dtstart = None
