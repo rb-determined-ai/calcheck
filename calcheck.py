@@ -8,8 +8,9 @@ import sys
 ### BEGIN CONFIG SECTION
 
 # URL is where the calendar is fetched from
-URL=(
+URL = (
     "https://outlook.office365.com/.../reachcalendar.ics"
+    # or os.environ["OUTLOOK_URL"]
 )
 
 # WINDOW is the time window for which you want to detect events when the script runs.
@@ -19,12 +20,23 @@ WINDOW = 6*60
 # on_event is called for every future event within the WINDOW
 def on_event(epoch, summary):
     import subprocess
-    subprocess.Popen(["notify-send", "-u", "critical", "upcoming event: %s"%summary]).wait()
-
+    cmd = notify_command(f"upcoming event: {summary}")
+    print(f"notify: {cmd}")
+    subprocess.Popen(cmd).wait()
 
 def on_failure(msg):
     import subprocess
-    subprocess.Popen(["notify-send", "-u", "critical", "calcheck failed: %s"%msg]).wait()
+    subprocess.Popen(notify_command(f"calcheck failed: {msg}")).wait()
+
+def notify_command(message):
+    if sys.platform.startswith("linux"):
+        return ["notify-send", "-u", "critical", message]
+    elif sys.platform == "darwin":
+        return ["osascript", "-e", f'display notification "{message}" with title "calcheck"']
+        # return ["say", f"hello anda. you have a meeting for {message}"]
+
+    elif sys.platform == "win32":
+        return ["echo", "use a different operating system"]
 
 ### END CONFIG SECTION
 
