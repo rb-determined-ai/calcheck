@@ -21,7 +21,6 @@ WINDOW = 6*60
 def on_event(epoch, summary):
     import subprocess
     cmd = notify_command(f"upcoming event: {summary}")
-    print(f"notify: {cmd}")
     subprocess.Popen(cmd).wait()
 
 def on_failure(msg):
@@ -33,10 +32,9 @@ def notify_command(message):
         return ["notify-send", "-u", "critical", message]
     elif sys.platform == "darwin":
         return ["osascript", "-e", f'display notification "{message}" with title "calcheck"']
-        # return ["say", f"hello anda. you have a meeting for {message}"]
 
     elif sys.platform == "win32":
-        return ["echo", "use a different operating system"]
+        raise ValueError("Unsupported operating system")
 
 ### END CONFIG SECTION
 

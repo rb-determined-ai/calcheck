@@ -30,7 +30,8 @@ sudo tee "$calcheck" << EOF | sed -e 's/^/    /'
 
   <key>ProgramArguments</key>
   <array>
-        <string>$dir/launch.sh</string>
+        <string>/usr/bin/python3</string>
+        <string>$dir/calcheck.py</string>
   </array>
 
   <key>StartInterval</key>
@@ -38,11 +39,9 @@ sudo tee "$calcheck" << EOF | sed -e 's/^/    /'
 
   <key>RunAtLoad</key>
   <true/>
-  <key>Debug</key>
-  <true/>
+
   <key>StandardErrorPath</key>
   <string>$dir/log.err</string>
-
   <key>StandardOutPath</key>
   <string>$dir/log.out</string>
 
