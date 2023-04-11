@@ -263,7 +263,8 @@ def dup_vevent(vevent, **replacements):
             out.append((k, v))
     return out
 
-def days_to_num(days):
+
+def day_to_num(day):
     dmap = {
         "MO": 1,
         "TU": 2,
@@ -273,7 +274,7 @@ def days_to_num(days):
         "SA": 6,
         "SU": 7,
     }
-    return [dmap[d] for d in days]
+    return dmap[day]
 
 def recur(vevent, rrule):
     params = {}
@@ -285,11 +286,29 @@ def recur(vevent, rrule):
     dtstart_params = key_params(vevent, "DTSTART")
     tzid = dtstart_params["TZID"]
 
+    # Daily recurrance logic.
+    if params["FREQ"] == "DAILY":
+        assert "INTERVAL" in params, f"RRULE:FREQ=DAILY has no INTERVAL: {rrule}"
+        assert "UNTIL" in params, f"RRULE:FREQ=DAILY has no UNTIL: {rrule}"
+        until = datetime.datetime.strptime(params["UNTIL"], "%Y%m%dT%H%M%SZ")
+        interval = int(params["INTERVAL"])
+        end = datetime.datetime.now() + datetime.timedelta(days=14)
+        if until < end:
+            end = until
+        tm = datetime.datetime.strptime(dtstart, "%Y%m%dT%H%M%S")
+        tm += datetime.timedelta(days=interval)
+        while tm < end:
+            new_dtstart_val = tm.strftime("%Y%m%dT%H%M%S")
+            new_dtstart_key = "DTSTART;" + ";".join(f"{k}={v}" for k,v in dtstart_params.items())
+            yield dup_vevent(vevent, DTSTART=(new_dtstart_key, new_dtstart_val))
+            tm += datetime.timedelta(days=interval)
+        return
+
     # Weekly recurrance logic.
     if params["FREQ"] == "WEEKLY":
-        assert "BYDAY" in params, "RRULE:FREQ=WEEKLY has no BYDAY: {rrule}"
-        assert "UNTIL" in params, "RRULE:FREQ=WEEKLY has no UNTIL: {rrule}"
-        days = days_to_num(params["BYDAY"].split(","))
+        assert "BYDAY" in params, f"RRULE:FREQ=WEEKLY has no BYDAY: {rrule}"
+        assert "UNTIL" in params, f"RRULE:FREQ=WEEKLY has no UNTIL: {rrule}"
+        days = [day_to_num(d) for d in params["BYDAY"].split(",")]
         until = datetime.datetime.strptime(params["UNTIL"], "%Y%m%dT%H%M%SZ")
         interval = int(params.get("INTERVAL", "1"))
         tm = datetime.datetime.strptime(dtstart, "%Y%m%dT%H%M%S")
@@ -311,7 +330,52 @@ def recur(vevent, rrule):
         return
 
     if params["FREQ"] == "MONTHLY":
-        # TODO: support monthly events
+        assert "BYDAY" in params, f"RRULE:FREQ=MONTHLY has no BYDAY"
+        assert "UNTIL" in params, f"RRULE:FREQ=WEEKLY has no UNTIL: {rrule}"
+        # BYDAY examples:
+        #    1TH: "first thursday of the month"
+        #    2WE: "second wednesday of the month"
+        #    -1FR: "last friday of the month"
+        #    -2MO: "sencond-to-last monday of the month"
+        interval = int(params.get("INTERVAL", "1"))
+        until = datetime.datetime.strptime(params["UNTIL"], "%Y%m%dT%H%M%SZ")
+        byday = params["BYDAY"]
+        nth = int(byday[0:-2])
+        day_num = day_to_num(byday[-2:])
+        start = datetime.datetime.strptime(dtstart, "%Y%m%dT%H%M%S")
+        tm = datetime.datetime.strptime(dtstart, "%Y%m%dT%H%M%S")
+        end = datetime.datetime.now() + datetime.timedelta(days=14)
+        if until < end:
+            end = until
+
+        def month_matches(tm):
+            # Match INTERVAL
+            monthdiff = (tm.year-start.year)*12 + tm.month - start.month
+            return monthdiff % interval == 0
+
+        def day_matches(tm):
+            # Match the day of the week.
+            if tm.isoweekday() != day_num:
+                return False
+            # Match the nth spec.
+            if nth > 0:
+                # Example: nth=2; (tm - 1weeks) should be the same month, but not (tm - 2weeks)
+                test1 = tm - datetime.timedelta(weeks=nth-1)
+                test2 = tm - datetime.timedelta(weeks=nth)
+            else:
+                # Example: nth=-2; (tm + 1weeks) should be the same month, but not (tm + 2weeks)
+                test1 = tm + datetime.timedelta(weeks=(-nth)-1)
+                test2 = tm + datetime.timedelta(weeks=-nth)
+            return test1.month == tm.month and test2.month != tm.month
+
+        # repeatedly add days, and check if they match the BYDAY spec
+        tm += datetime.timedelta(days=1)
+        while tm < end:
+            if month_matches(tm) and day_matches(tm):
+                new_dtstart_val = tm.strftime("%Y%m%dT%H%M%S")
+                new_dtstart_key = "DTSTART;" + ";".join(f"{k}={v}" for k,v in dtstart_params.items())
+                yield dup_vevent(vevent, DTSTART=(new_dtstart_key, new_dtstart_val))
+            tm += datetime.timedelta(days=1)
         return
 
     raise ValueError(f"unsupported FREQ: '{params['FREQ']}'")
