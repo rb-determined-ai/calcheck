@@ -269,7 +269,14 @@ def detect_upcoming_events(url, window, hook, now, win2iana):
                     tzid = key[13:]
                 if key == "SUMMARY":
                     summary = val
-            epoch = epoch_with_zone(dtstart, win2iana[tzid])
+
+            # inexplicably, outlook started sending a mix of iana and windows timezones
+            if tzid in zoneinfo.available_timezones():
+                iana_zone = tzid
+            else:
+                iana_zone = win2iana[tzid]
+
+            epoch = epoch_with_zone(dtstart, iana_zone)
 
             diff = epoch - now
             print(diff, dtstart, summary)
@@ -282,7 +289,7 @@ def detect_upcoming_events(url, window, hook, now, win2iana):
 def windows_to_iana_timezones():
     file = os.path.join(os.path.dirname(__file__), "windowsZones.xml")
     # Periodically download the latest version of the lookup table.
-    if not os.path.exists(file) or os.stat(file).st_mtime + 60*60*30 < time.time():
+    if not os.path.exists(file) or os.stat(file).st_mtime + 60*60*24 < time.time():
         url = (
             "https://raw.githubusercontent.com/unicode-org/cldr/"
             "main/common/supplemental/windowsZones.xml"
