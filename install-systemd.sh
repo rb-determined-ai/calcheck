@@ -32,6 +32,7 @@ Description=calcheck service
 [Service]
 Type=oneshot
 ExecStart=$PWD/calcheck.py
+TimeoutSec=60
 EOF
 echo ""
 
