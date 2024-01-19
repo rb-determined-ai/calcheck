@@ -18,8 +18,9 @@ except:
 
 # URL is where the calendar is fetched from
 URL = (
-    "https://outlook.office365.com/.../reachcalendar.ics"
-    # or os.environ["OUTLOOK_URL"]
+    "https://outlook.office365.com/owa/calendar/828bfcb11c44439c98c5962432e81c27@hpe.com/"
+    "970e12aa08e94ac8b09f10c89b71d05915089000860879065397/"
+    "S-1-8-3592909619-2341230185-1888318009-1747422163/reachcalendar.ics"
 )
 
 # WINDOW is the time window for which you want to detect events when the script runs.
@@ -31,10 +32,12 @@ def on_event(epoch, summary):
     import subprocess
     cmd = notify_command(f"upcoming event: {summary}")
     subprocess.Popen(cmd).wait()
+    subprocess.Popen(["/home/rb/scripts/beep"]).wait()
 
 def on_failure(msg):
     import subprocess
     subprocess.Popen(notify_command(f"calcheck failed: {msg}")).wait()
+    subprocess.Popen(["/home/rb/scripts/beep"]).wait()
 
 def notify_command(message):
     if sys.platform.startswith("linux"):
@@ -272,9 +275,11 @@ def detect_upcoming_events(url, window, hook, now, win2iana):
 
             # inexplicably, outlook started sending a mix of iana and windows timezones
             if tzid in zoneinfo.available_timezones():
+                print("tzid is in", tzid)
                 iana_zone = tzid
             else:
                 iana_zone = win2iana[tzid]
+                print(f"tzid is out '{tzid}' '{iana_zone}'")
 
             epoch = epoch_with_zone(dtstart, iana_zone)
 
@@ -307,8 +312,12 @@ def windows_to_iana_timezones():
     # Example:
     #
     #    <mapZone other="Hawaiian Standard Time" territory="001" type="Pacific/Honolulu"/>
+    #    <mapZone other="Hawaiian Standard Time" territory="CK" type="Pacific/Rarotonga"/>
+    #    <mapZone other="Hawaiian Standard Time" territory="PF" type="Pacific/Tahiti"/>
+    #    <mapZone other="Hawaiian Standard Time" territory="US" type="Pacific/Honolulu"/>
+    #    <mapZone other="Hawaiian Standard Time" territory="ZZ" type="Etc/GMT+10"/>
     table = {}
-    pattern = re.compile('<mapZone other="([^"]*)".* type="([^"]*)"')
+    pattern = re.compile('<mapZone other="([^"]*)" territory="001" type="([^"]*)"')
     for line in text.splitlines():
         match = pattern.search(line)
         if not match:
